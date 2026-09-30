@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dungeon Crawl Game</title>
+    <title>Escape Chamber</title>
     <style>
         * {
             box-sizing: border-box;
@@ -112,27 +112,27 @@
     </style>
 </head>
 <body>
-    <h1>🏰 Dungeon Crawl</h1>
+    <h1>🏃 Escape Chamber</h1>
 
     <div id="gameContainer">
         <canvas id="gameCanvas"></canvas>
 
         <div id="hud">
             <div class="hud-item">
-                <div class="hud-label">Health</div>
+                <div class="hud-label">Survival</div>
                 <div class="hud-value" id="healthValue">10</div>
             </div>
             <div class="hud-item">
-                <div class="hud-label">Key Found</div>
+                <div class="hud-label">Exit Ready</div>
                 <div class="hud-value" id="keyValue" style="color: #ff6b6b;">NO</div>
             </div>
-            <div id="message">Find the key, then escape!</div>
+            <div id="message">Navigate the chamber to freedom!</div>
         </div>
 
         <div id="controls">
             <div class="control-row"><span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> or <span class="key">↑</span> <span class="key">←</span> <span class="key">↓</span> <span class="key">→</span> = Move</div>
-            <div class="control-row"><span class="key">SPACE</span> = Attack</div>
-            <div class="control-row"><span class="key">R</span> = Restart</div>
+            <div class="control-row"><span class="key">SPACE</span> = Defend</div>
+            <div class="control-row"><span class="key">R</span> = Reset</div>
         </div>
     </div>
 
@@ -157,8 +157,8 @@
         let victory = false;
         let health = 10;
         let dirX = 1, dirY = 0;
-        let message = "Find the key, then escape!";
-        let lastAttackTime = 0;
+        let message = "Navigate the chamber to freedom!";
+        let lastActionTime = 0;
 
         const keys = {};
 
@@ -239,7 +239,7 @@
             keyY = keyRoom.y + 1;
             grid[keyY][keyX] = '.';
 
-            // Spawn enemies
+            // Spawn obstacles
             enemies = [];
             const candidates = [];
             for (let y = 0; y < MAP_H; y++) {
@@ -281,11 +281,11 @@
             }
         }
 
-        function attack() {
+        function defend() {
             if (gameOver || victory) return;
             const now = Date.now();
-            if (now - lastAttackTime < 280) return;
-            lastAttackTime = now;
+            if (now - lastActionTime < 280) return;
+            lastActionTime = now;
 
             for (let i = 1; i <= 2; i++) {
                 const tx = playerX + dirX * i;
@@ -296,21 +296,21 @@
                 for (let j = 0; j < enemies.length; j++) {
                     if (enemies[j].x === tx && enemies[j].y === ty) {
                         enemies.splice(j, 1);
-                        message = "You hit an enemy!";
+                        message = "Obstacle cleared!";
                         return;
                     }
                 }
             }
-            message = "Your attack misses!";
+            message = "No obstruction ahead.";
         }
 
-        function updateEnemies() {
+        function updateObstacles() {
             if (gameOver || victory) return;
 
             for (let i = 0; i < enemies.length; i++) {
-                const enemy = enemies[i];
-                const dx = playerX - enemy.x;
-                const dy = playerY - enemy.y;
+                const obstacle = enemies[i];
+                const dx = playerX - obstacle.x;
+                const dy = playerY - obstacle.y;
 
                 if (Math.abs(dx) + Math.abs(dy) > 6) continue;
 
@@ -322,21 +322,21 @@
                     stepY = dy > 0 ? 1 : -1;
                 }
 
-                const nx = enemy.x + stepX;
-                const ny = enemy.y + stepY;
+                const nx = obstacle.x + stepX;
+                const ny = obstacle.y + stepY;
 
                 if (!isWall(nx, ny)) {
-                    enemy.x = nx;
-                    enemy.y = ny;
+                    obstacle.x = nx;
+                    obstacle.y = ny;
                 }
 
                 if (Math.abs(playerX - nx) + Math.abs(playerY - ny) <= 1) {
                     health--;
-                    message = "An enemy hit you!";
+                    message = "Obstacle collision!";
                     if (health <= 0) {
                         health = 0;
                         gameOver = true;
-                        message = "You died! Press R to restart.";
+                        message = "Chamber hazard detected. Press R to retry.";
                     }
                 }
             }
@@ -368,17 +368,17 @@
             }
             ctx.fillRect(exitX * TILE + 8, exitY * TILE + 8, TILE - 16, TILE - 16);
 
-            // Key
+            // Key/Pass
             if (!hasKey && keyX !== -1 && keyY !== -1) {
                 ctx.fillStyle = '#ffd800';
                 ctx.fillRect(keyX * TILE + 9, keyY * TILE + 9, TILE - 18, TILE - 18);
             }
 
-            // Enemies
-            enemies.forEach(enemy => {
+            // Obstacles
+            enemies.forEach(obstacle => {
                 ctx.fillStyle = '#dc5454';
                 ctx.beginPath();
-                ctx.arc(enemy.x * TILE + TILE / 2, enemy.y * TILE + TILE / 2, (TILE - 12) / 2, 0, Math.PI * 2);
+                ctx.arc(obstacle.x * TILE + TILE / 2, obstacle.y * TILE + TILE / 2, (TILE - 12) / 2, 0, Math.PI * 2);
                 ctx.fill();
             });
 
@@ -405,7 +405,7 @@
 
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 18px Courier New';
-            ctx.fillText('Controls: WASD/Arrows=Move | SPACE=Attack | R=Restart', 16, MAP_H * TILE + 30);
+            ctx.fillText('WASD/Arrows=Move | SPACE=Defend | R=Reset', 16, MAP_H * TILE + 30);
         }
 
         function drawOverlay() {
@@ -415,9 +415,9 @@
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 28px Courier New';
                 ctx.textAlign = 'center';
-                ctx.fillText('You escaped!', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillText('Chamber Escaped!', canvas.width / 2, canvas.height / 2 - 20);
                 ctx.font = '18px Courier New';
-                ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillText('Press R to retry', canvas.width / 2, canvas.height / 2 + 20);
                 ctx.textAlign = 'left';
             }
 
@@ -427,10 +427,10 @@
                 ctx.fillStyle = '#ff5a5a';
                 ctx.font = 'bold 32px Courier New';
                 ctx.textAlign = 'center';
-                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillText('Attempt Failed', canvas.width / 2, canvas.height / 2 - 20);
                 ctx.fillStyle = '#ffffff';
                 ctx.font = '18px Courier New';
-                ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillText('Press R to retry', canvas.width / 2, canvas.height / 2 + 20);
                 ctx.textAlign = 'left';
             }
         }
@@ -460,16 +460,16 @@
                     hasKey = true;
                     keyX = -1;
                     keyY = -1;
-                    message = "You found the key!";
+                    message = "Pass acquired!";
                 }
 
                 // Check exit
                 if (playerX === exitX && playerY === exitY && hasKey) {
                     victory = true;
-                    message = "You escaped the dungeon!";
+                    message = "Successfully escaped the chamber!";
                 }
 
-                updateEnemies();
+                updateObstacles();
             }
 
             // Update HUD
@@ -487,8 +487,8 @@
             health = 10;
             dirX = 1;
             dirY = 0;
-            message = "Find the key, then escape!";
-            lastAttackTime = 0;
+            message = "Navigate the chamber to freedom!";
+            lastActionTime = 0;
         }
 
         function gameLoop() {
@@ -501,7 +501,7 @@
             keys[e.key] = true;
             if (e.key === ' ') {
                 e.preventDefault();
-                attack();
+                defend();
             }
             if (e.key === 'r' || e.key === 'R') {
                 resetGame();
