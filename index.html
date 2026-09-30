@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dungeon Crawl Game</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: #0d1018;
+            color: #e0e0e0;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        canvas {
+            border: 3px solid #444;
+            background: #000;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            display: block;
+        }
+
+        #hud {
+            width: 576px;
+            background: rgba(20, 20, 30, 0.9);
+            border: 2px solid #666;
+            padding: 15px;
+            border-radius: 6px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            text-align: center;
+        }
+
+        .hud-item {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .hud-label {
+            font-size: 14px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .hud-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        #message {
+            grid-column: 1 / -1;
+            font-size: 16px;
+            color: #ffdd80;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        #controls {
+            width: 576px;
+            background: rgba(20, 20, 30, 0.9);
+            border: 2px solid #666;
+            padding: 15px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.8;
+            text-align: center;
+        }
+
+        .control-row {
+            margin: 8px 0;
+        }
+
+        .key {
+            background: #333;
+            color: #ffdd80;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            display: inline-block;
+            min-width: 30px;
+        }
+
+        h1 {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            color: #66bb6a;
+            text-shadow: 0 0 10px rgba(102, 187, 106, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <h1>🏰 Dungeon Crawl</h1>
+
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="hud">
+            <div class="hud-item">
+                <div class="hud-label">Health</div>
+                <div class="hud-value" id="healthValue">10</div>
+            </div>
+            <div class="hud-item">
+                <div class="hud-label">Key Found</div>
+                <div class="hud-value" id="keyValue" style="color: #ff6b6b;">NO</div>
+            </div>
+            <div id="message">Find the key, then escape!</div>
+        </div>
+
+        <div id="controls">
+            <div class="control-row"><span class="key">W</span> <span class="key">A</span> <span class="key">S</span> <span class="key">D</span> or <span class="key">↑</span> <span class="key">←</span> <span class="key">↓</span> <span class="key">→</span> = Move</div>
+            <div class="control-row"><span class="key">SPACE</span> = Attack</div>
+            <div class="control-row"><span class="key">R</span> = Restart</div>
+        </div>
+    </div>
+
+    <script>
+        const TILE = 32;
+        const MAP_W = 18;
+        const MAP_H = 12;
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = MAP_W * TILE;
+        canvas.height = MAP_H * TILE + 80;
+
+        // Game state
+        let map = [];
+        let playerX = 0, playerY = 0;
+        let keyX = -1, keyY = -1;
+        let exitX = 0, exitY = 0;
+        let enemies = [];
+        let hasKey = false;
+        let gameOver = false;
+        let victory = false;
+        let health = 10;
+        let dirX = 1, dirY = 0;
+        let message = "Find the key, then escape!";
+        let lastAttackTime = 0;
+
+        const keys = {};
+
+        // Room class
+        class Room {
+            constructor(x, y, w, h) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+            }
+        }
+
+        // Generate level
+        function generateLevel() {
+            const grid = [];
+            for (let y = 0; y < MAP_H; y++) {
+                grid[y] = [];
+                for (let x = 0; x < MAP_W; x++) {
+                    grid[y][x] = '#';
+                }
+            }
+
+            const rooms = [];
+
+            // Create rooms
+            for (let i = 0; i < 9; i++) {
+                const roomW = 3 + Math.floor(Math.random() * 3);
+                const roomH = 3 + Math.floor(Math.random() * 3);
+                const x = 1 + Math.floor(Math.random() * (MAP_W - roomW - 2));
+                const y = 1 + Math.floor(Math.random() * (MAP_H - roomH - 2));
+
+                rooms.push(new Room(x, y, roomW, roomH));
+
+                for (let yy = y; yy < y + roomH; yy++) {
+                    for (let xx = x; xx < x + roomW; xx++) {
+                        grid[yy][xx] = '.';
+                    }
+                }
+            }
+
+            // Connect rooms with corridors
+            for (let i = 0; i < rooms.length - 1; i++) {
+                const a = rooms[i];
+                const b = rooms[i + 1];
+
+                let x1 = a.x + Math.floor(a.w / 2);
+                let y1 = a.y + Math.floor(a.h / 2);
+                const x2 = b.x + Math.floor(b.w / 2);
+                const y2 = b.y + Math.floor(b.h / 2);
+
+                while (x1 !== x2) {
+                    grid[y1][x1] = '.';
+                    x1 += x2 > x1 ? 1 : -1;
+                }
+
+                while (y1 !== y2) {
+                    grid[y1][x1] = '.';
+                    y1 += y2 > y1 ? 1 : -1;
+                }
+            }
+
+            // Set player start
+            const startRoom = rooms[0];
+            playerX = startRoom.x + 1;
+            playerY = startRoom.y + 1;
+            grid[playerY][playerX] = '.';
+
+            // Set exit
+            const exitRoom = rooms[rooms.length - 1];
+            exitX = exitRoom.x + exitRoom.w - 2;
+            exitY = exitRoom.y + exitRoom.h - 2;
+            grid[exitY][exitX] = '.';
+
+            // Set key
+            const keyRoom = rooms[1];
+            keyX = keyRoom.x + 1;
+            keyY = keyRoom.y + 1;
+            grid[keyY][keyX] = '.';
+
+            // Spawn enemies
+            enemies = [];
+            const candidates = [];
+            for (let y = 0; y < MAP_H; y++) {
+                for (let x = 0; x < MAP_W; x++) {
+                    if (grid[y][x] === '.' &&
+                        !(x === playerX && y === playerY) &&
+                        !(x === keyX && y === keyY) &&
+                        !(x === exitX && y === exitY)) {
+                        candidates.push({ x, y });
+                    }
+                }
+            }
+
+            for (let i = 0; i < Math.min(7, candidates.length); i++) {
+                const idx = Math.floor(Math.random() * candidates.length);
+                enemies.push(candidates[idx]);
+                candidates.splice(idx, 1);
+            }
+
+            return grid;
+        }
+
+        function isWall(x, y) {
+            if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) return true;
+            return map[y][x] === '#';
+        }
+
+        function movePlayer(dx, dy) {
+            if (gameOver || victory) return;
+            const nx = playerX + dx;
+            const ny = playerY + dy;
+            if (!isWall(nx, ny)) {
+                playerX = nx;
+                playerY = ny;
+                if (dx !== 0 || dy !== 0) {
+                    dirX = dx;
+                    dirY = dy;
+                }
+            }
+        }
+
+        function attack() {
+            if (gameOver || victory) return;
+            const now = Date.now();
+            if (now - lastAttackTime < 280) return;
+            lastAttackTime = now;
+
+            for (let i = 1; i <= 2; i++) {
+                const tx = playerX + dirX * i;
+                const ty = playerY + dirY * i;
+
+                if (tx < 0 || ty < 0 || tx >= MAP_W || ty >= MAP_H) break;
+
+                for (let j = 0; j < enemies.length; j++) {
+                    if (enemies[j].x === tx && enemies[j].y === ty) {
+                        enemies.splice(j, 1);
+                        message = "You hit an enemy!";
+                        return;
+                    }
+                }
+            }
+            message = "Your attack misses!";
+        }
+
+        function updateEnemies() {
+            if (gameOver || victory) return;
+
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                const dx = playerX - enemy.x;
+                const dy = playerY - enemy.y;
+
+                if (Math.abs(dx) + Math.abs(dy) > 6) continue;
+
+                let stepX = 0, stepY = 0;
+
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    stepX = dx > 0 ? 1 : -1;
+                } else {
+                    stepY = dy > 0 ? 1 : -1;
+                }
+
+                const nx = enemy.x + stepX;
+                const ny = enemy.y + stepY;
+
+                if (!isWall(nx, ny)) {
+                    enemy.x = nx;
+                    enemy.y = ny;
+                }
+
+                if (Math.abs(playerX - nx) + Math.abs(playerY - ny) <= 1) {
+                    health--;
+                    message = "An enemy hit you!";
+                    if (health <= 0) {
+                        health = 0;
+                        gameOver = true;
+                        message = "You died! Press R to restart.";
+                    }
+                }
+            }
+        }
+
+        function drawMap() {
+            for (let y = 0; y < MAP_H; y++) {
+                for (let x = 0; x < MAP_W; x++) {
+                    if (map[y][x] === '#') {
+                        ctx.fillStyle = '#282e3a';
+                    } else {
+                        ctx.fillStyle = '#505a66';
+                    }
+                    ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+
+                    ctx.strokeStyle = '#191c22';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x * TILE, y * TILE, TILE, TILE);
+                }
+            }
+        }
+
+        function drawEntities() {
+            // Exit
+            if (!hasKey) {
+                ctx.fillStyle = '#3c3c46';
+            } else {
+                ctx.fillStyle = '#1eaa5a';
+            }
+            ctx.fillRect(exitX * TILE + 8, exitY * TILE + 8, TILE - 16, TILE - 16);
+
+            // Key
+            if (!hasKey && keyX !== -1 && keyY !== -1) {
+                ctx.fillStyle = '#ffd800';
+                ctx.fillRect(keyX * TILE + 9, keyY * TILE + 9, TILE - 18, TILE - 18);
+            }
+
+            // Enemies
+            enemies.forEach(enemy => {
+                ctx.fillStyle = '#dc5454';
+                ctx.beginPath();
+                ctx.arc(enemy.x * TILE + TILE / 2, enemy.y * TILE + TILE / 2, (TILE - 12) / 2, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Player
+            ctx.fillStyle = '#6eb4ff';
+            ctx.fillRect(playerX * TILE + 6, playerY * TILE + 6, TILE - 12, TILE - 12);
+
+            // Direction indicator
+            const cx = playerX * TILE + TILE / 2;
+            const cy = playerY * TILE + TILE / 2;
+            const ex = cx + dirX * 12;
+            const ey = cy + dirY * 12;
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+        }
+
+        function drawHUD() {
+            ctx.fillStyle = 'rgba(16, 18, 22, 0.9)';
+            ctx.fillRect(0, MAP_H * TILE, canvas.width, 80);
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 18px Courier New';
+            ctx.fillText('Controls: WASD/Arrows=Move | SPACE=Attack | R=Restart', 16, MAP_H * TILE + 30);
+        }
+
+        function drawOverlay() {
+            if (victory) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 28px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('You escaped!', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.font = '18px Courier New';
+                ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.textAlign = 'left';
+            }
+
+            if (gameOver && !victory) {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#ff5a5a';
+                ctx.font = 'bold 32px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 20);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '18px Courier New';
+                ctx.fillText('Press R to restart', canvas.width / 2, canvas.height / 2 + 20);
+                ctx.textAlign = 'left';
+            }
+        }
+
+        function draw() {
+            drawMap();
+            drawEntities();
+            drawHUD();
+            drawOverlay();
+        }
+
+        function update() {
+            if (!gameOver && !victory) {
+                // Movement
+                let dx = 0, dy = 0;
+                if (keys['w'] || keys['W'] || keys['ArrowUp']) dy = -1;
+                if (keys['s'] || keys['S'] || keys['ArrowDown']) dy = 1;
+                if (keys['a'] || keys['A'] || keys['ArrowLeft']) dx = -1;
+                if (keys['d'] || keys['D'] || keys['ArrowRight']) dx = 1;
+
+                if (dx !== 0 || dy !== 0) {
+                    movePlayer(dx, dy);
+                }
+
+                // Pick up key
+                if (playerX === keyX && playerY === keyY) {
+                    hasKey = true;
+                    keyX = -1;
+                    keyY = -1;
+                    message = "You found the key!";
+                }
+
+                // Check exit
+                if (playerX === exitX && playerY === exitY && hasKey) {
+                    victory = true;
+                    message = "You escaped the dungeon!";
+                }
+
+                updateEnemies();
+            }
+
+            // Update HUD
+            document.getElementById('healthValue').textContent = health;
+            document.getElementById('keyValue').textContent = hasKey ? 'YES' : 'NO';
+            document.getElementById('keyValue').style.color = hasKey ? '#66bb6a' : '#ff6b6b';
+            document.getElementById('message').textContent = message;
+        }
+
+        function resetGame() {
+            map = generateLevel();
+            hasKey = false;
+            gameOver = false;
+            victory = false;
+            health = 10;
+            dirX = 1;
+            dirY = 0;
+            message = "Find the key, then escape!";
+            lastAttackTime = 0;
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+            if (e.key === ' ') {
+                e.preventDefault();
+                attack();
+            }
+            if (e.key === 'r' || e.key === 'R') {
+                resetGame();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>
